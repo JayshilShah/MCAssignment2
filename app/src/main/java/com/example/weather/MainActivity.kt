@@ -47,6 +47,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import android.app.Application
 import androidx.room.Room
+import java.time.LocalDate
 
 @Entity(tableName = "weather_data")
 data class WeatherData(
@@ -79,6 +80,42 @@ class WeatherRepository(private val weatherDao: WeatherDao) {
 
     fun getWeatherByDateAndLocation(date: String, location: String): WeatherData {
         return weatherDao.getWeatherByDateAndLocation(date, location)
+    }
+}
+
+private fun isDateValid(date: String): Boolean {
+    val currentDate = LocalDate.now()
+    val enteredDate = LocalDate.parse(date)
+    return !enteredDate.isAfter(currentDate)
+}
+
+private fun getPastYearsDates(date: LocalDate, numYears: Int): List<String> {
+    val dates = mutableListOf<String>()
+    for (i in 1..numYears) {
+        dates.add(date.minusYears(i.toLong()).toString())
+    }
+    return dates
+}
+
+private suspend fun getWeatherForPastYears(date: String, location: String, repository: WeatherRepository): Pair<Double, Double>? {
+    val pastYearsDates = getPastYearsDates(LocalDate.parse(date), 10)
+    var totalMinTemp = 0.0
+    var totalMaxTemp = 0.0
+    var numYearsWithData = 0
+
+    for (pastDate in pastYearsDates) {
+        val weatherData = repository.getWeatherByDateAndLocation(pastDate, location)
+        if (weatherData != null) {
+            totalMinTemp += weatherData.tempMin
+            totalMaxTemp += weatherData.tempMax
+            numYearsWithData++
+        }
+    }
+
+    return if (numYearsWithData == 10) {
+        Pair(totalMinTemp / numYearsWithData, totalMaxTemp / numYearsWithData)
+    } else {
+        null
     }
 }
 
@@ -159,36 +196,90 @@ private fun getWeather(
     // Using Coroutines to perform the API call asynchronously
     CoroutineScope(Dispatchers.IO).launch {
         try {
-            if(isInternetAvailable()){
-                val url = URL("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/$location/$date?key=MQVU6RBPNQ6NUGXF9HA2D5H28")
-                val connection: HttpURLConnection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connect()
+            if(isDateValid(date)){
+                if(isInternetAvailable()){
+                    val url = URL("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/$location/$date?key=MQVU6RBPNQ6NUGXF9HA2D5H28")
+                    val connection: HttpURLConnection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.connect()
 
-                // Read response
-                val inputStream = connection.inputStream
-                val response = inputStream.bufferedReader().use(BufferedReader::readText)
-                inputStream.close()
+                    // Read response
+                    val inputStream = connection.inputStream
+                    val response = inputStream.bufferedReader().use(BufferedReader::readText)
+                    inputStream.close()
 
-                // Parse response JSON and convert it to WeatherResponse object
-                val weatherResponse = parseWeatherResponse(response)
+                    // Parse response JSON and convert it to WeatherResponse object
+                    val weatherResponse = parseWeatherResponse(response)
 
-                if (weatherResponse != null) {
-                    val (minTemp, maxTemp) = weatherResponse
-                    onResult(minTemp.toString(), maxTemp.toString())
-                    // Save data to database
-                    val weatherData = WeatherData(date = date, location = location, tempMin = minTemp, tempMax = maxTemp)
-                    repository.insertWeather(weatherData)
+                    if (weatherResponse != null) {
+                        val (minTemp, maxTemp) = weatherResponse
+                        onResult(minTemp.toString(), maxTemp.toString())
+                        // Save data to database
+                        val weatherData = WeatherData(date = date, location = location, tempMin = minTemp, tempMax = maxTemp)
+                        repository.insertWeather(weatherData)
+                    } else {
+                        onResult("", "")
+                    }
                 } else {
-                    onResult("", "")
+                    // Fetch data from database
+                    val weatherData = repository.getWeatherByDateAndLocation(date, location)
+                    if (weatherData != null) {
+                        onResult(weatherData.tempMin.toString(), weatherData.tempMax.toString())
+                    } else {
+                        onResult("", "")
+                    }
                 }
             } else {
-                // Fetch data from database
-                val weatherData = repository.getWeatherByDateAndLocation(date, location)
-                if (weatherData != null) {
-                    onResult(weatherData.tempMin.toString(), weatherData.tempMax.toString())
+                if (isInternetAvailable()) {
+                    val weatherResponse = getWeatherForPastYears(date, location, repository)
+
+                    if (weatherResponse != null) {
+                        val (minTemp, maxTemp) = weatherResponse
+                        onResult(minTemp.toString(), maxTemp.toString())
+                    } else {
+                        // Call API 10 times for past years
+                        for (i in 1..10) {
+                            val pastDate = LocalDate.parse(date).minusYears(i.toLong()).toString()
+//                            getWeatherFromApiAndStore(pastDate, location, repository)
+                            val url = URL("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/$location/$pastDate?key=MQVU6RBPNQ6NUGXF9HA2D5H28")
+                            val connection: HttpURLConnection = url.openConnection() as HttpURLConnection
+                            connection.requestMethod = "GET"
+                            connection.connect()
+
+                            // Read response
+                            val inputStream = connection.inputStream
+                            val response = inputStream.bufferedReader().use(BufferedReader::readText)
+                            inputStream.close()
+
+                            // Parse response JSON and convert it to WeatherResponse object
+                            val weatherResponse = parseWeatherResponse(response)
+                            if (weatherResponse != null) {
+                                val (minTemp, maxTemp) = weatherResponse
+                                // Save data to database
+                                val weatherData = WeatherData(date = pastDate, location = location, tempMin = minTemp, tempMax = maxTemp)
+                                repository.insertWeather(weatherData)
+                            }
+                        }
+
+                        // Calculate average temperature for past 10 years
+                        val averageWeatherResponse = getWeatherForPastYears(date, location, repository)
+                        if (averageWeatherResponse != null) {
+                            val (minTemp, maxTemp) = averageWeatherResponse
+                            onResult(minTemp.toString(), maxTemp.toString())
+                        } else {
+                            // Handle case when no data available for past 10 years
+                            onResult("", "")
+                        }
+                    }
                 } else {
-                    onResult("", "")
+                    // Fetch data from database
+                    val weatherData = repository.getWeatherByDateAndLocation(date, location)
+                    if (weatherData != null) {
+                        onResult(weatherData.tempMin.toString(), weatherData.tempMax.toString())
+                    } else {
+                        // Handle case when no data available in database and no internet connection
+                        onResult("", "")
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -257,7 +348,6 @@ fun WeatherLayout(
 //fun DefaultPreview() {
 //    WeatherAppContent()
 //}
-
 
 
 
