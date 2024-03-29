@@ -187,6 +187,10 @@ fun WeatherAppContent(repository: WeatherRepository) {
     }
 }
 
+private fun roundTemperature(temperature: Double): String {
+    return String.format("%.2f", temperature)
+}
+
 private fun getWeather(
     date: String,
     location: String,
@@ -213,7 +217,7 @@ private fun getWeather(
 
                     if (weatherResponse != null) {
                         val (minTemp, maxTemp) = weatherResponse
-                        onResult(minTemp.toString(), maxTemp.toString())
+                        onResult(roundTemperature(minTemp), roundTemperature(maxTemp))
                         // Save data to database
                         val weatherData = WeatherData(date = date, location = location, tempMin = minTemp, tempMax = maxTemp)
                         repository.insertWeather(weatherData)
@@ -224,7 +228,7 @@ private fun getWeather(
                     // Fetch data from database
                     val weatherData = repository.getWeatherByDateAndLocation(date, location)
                     if (weatherData != null) {
-                        onResult(weatherData.tempMin.toString(), weatherData.tempMax.toString())
+                        onResult(roundTemperature(weatherData.tempMin), roundTemperature(weatherData.tempMax))
                     } else {
                         onResult("", "")
                     }
@@ -235,7 +239,7 @@ private fun getWeather(
 
                     if (weatherResponse != null) {
                         val (minTemp, maxTemp) = weatherResponse
-                        onResult(minTemp.toString(), maxTemp.toString())
+                        onResult(roundTemperature(minTemp), roundTemperature(maxTemp))
                     } else {
                         // Call API 10 times for past years
                         for (i in 1..10) {
@@ -265,7 +269,7 @@ private fun getWeather(
                         val averageWeatherResponse = getWeatherForPastYears(date, location, repository)
                         if (averageWeatherResponse != null) {
                             val (minTemp, maxTemp) = averageWeatherResponse
-                            onResult(minTemp.toString(), maxTemp.toString())
+                            onResult(roundTemperature(minTemp), roundTemperature(maxTemp))
                         } else {
                             // Handle case when no data available for past 10 years
                             onResult("", "")
@@ -275,7 +279,7 @@ private fun getWeather(
                     // Fetch data from database
                     val weatherData = repository.getWeatherByDateAndLocation(date, location)
                     if (weatherData != null) {
-                        onResult(weatherData.tempMin.toString(), weatherData.tempMax.toString())
+                        onResult(roundTemperature(weatherData.tempMin), roundTemperature(weatherData.tempMax))
                     } else {
                         // Handle case when no data available in database and no internet connection
                         onResult("", "")
@@ -287,7 +291,7 @@ private fun getWeather(
             // Fetch data from database
             val weatherData = repository.getWeatherByDateAndLocation(date, location)
             if (weatherData != null) {
-                onResult(weatherData.tempMin.toString(), weatherData.tempMax.toString())
+                onResult(roundTemperature(weatherData.tempMin), roundTemperature(weatherData.tempMax))
             } else {
                 onResult("", "")
             }
@@ -330,8 +334,8 @@ fun WeatherLayout(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(text = "Location: $location", style = MaterialTheme.typography.bodyMedium)
-        Text(text = "Minimum Temperature: $tempMin Degree Celsius", style = MaterialTheme.typography.bodyMedium)
-        Text(text = "Maximum Temperature: $tempMax Degree Celsius", style = MaterialTheme.typography.bodyMedium)
+        Text(text = "Minimum Temperature: $tempMin °C", style = MaterialTheme.typography.bodyMedium)
+        Text(text = "Maximum Temperature: $tempMax °C", style = MaterialTheme.typography.bodyMedium)
         if (error.isNotEmpty()) {
             Text(
                 text = error,
