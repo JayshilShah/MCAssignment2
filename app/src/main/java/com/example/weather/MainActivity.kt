@@ -46,8 +46,11 @@ import androidx.room.Query
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import android.app.Application
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.room.Room
 import java.time.LocalDate
+import java.time.format.TextStyle
 
 @Entity(tableName = "weather_data")
 data class WeatherData(
@@ -83,10 +86,8 @@ class WeatherRepository(private val weatherDao: WeatherDao) {
     }
 }
 
-private fun isDateValid(date: String): Boolean {
-    val currentDate = LocalDate.now()
-    val enteredDate = LocalDate.parse(date)
-    return !enteredDate.isAfter(currentDate)
+private fun isFutureDate(date: String): Boolean {
+    return LocalDate.parse(date) > LocalDate.now()
 }
 
 private fun getPastYearsDates(date: LocalDate, numYears: Int): List<String> {
@@ -156,31 +157,56 @@ fun WeatherAppContent(repository: WeatherRepository) {
         ) {
             TextField(
                 value = date,
-                onValueChange = { date = it },
-                label = { Text("Date(YYYY-MM-DD)") },
+                onValueChange = {
+                    date = it
+                    error = ""
+                },
+                label = { Text("Date(YYYY-MM-DD)", style = androidx.compose.ui.text.TextStyle(fontSize = 18.sp)) },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(8.dp))
             TextField(
                 value = location,
-                onValueChange = { location = it },
-                label = { Text("Location") },
+                onValueChange = {
+                    location = it
+                    error = ""
+                },
+                label = { Text("Location", style = androidx.compose.ui.text.TextStyle(fontSize = 18.sp)) },
                 modifier = Modifier.fillMaxWidth()
             )
+            if (error.isNotEmpty()) {
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                    color = Color.Red,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .padding(vertical = 8.dp)
+                        .fillMaxWidth() // Take full width of the parent
+                )
+            }
         }
         Spacer(modifier = Modifier.height(32.dp))
         Button(
             onClick = {
-                getWeather(date, location, repository) { minTemp, maxTemp ->
-                    // Update UI with response data
-                    tempMin = minTemp
-                    tempMax = maxTemp
-                    error = ""
+                if (date.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
+                    if (location.matches(Regex("[a-zA-Z ]+"))) {
+                        getWeather(date, location, repository) { minTemp, maxTemp ->
+                            tempMin = minTemp
+                            tempMax = maxTemp
+                            error = ""
+                        }
+                    } else {
+                        error = "Location should contain only letters"
+                    }
+                } else {
+                    error = "Date should be in YYYY-MM-DD format"
                 }
             },
             modifier = Modifier.align(Alignment.CenterHorizontally)
         ) {
-            Text("Get Weather")
+            Text("Get Weather", style = androidx.compose.ui.text.TextStyle(fontSize = 20.sp)
+            )
         }
         Spacer(modifier = Modifier.height(16.dp))
         WeatherLayout(location, tempMin, tempMax, error)
@@ -200,9 +226,10 @@ private fun getWeather(
     // Using Coroutines to perform the API call asynchronously
     CoroutineScope(Dispatchers.IO).launch {
         try {
-            if(isDateValid(date)){
+            if(!isFutureDate(date)){
                 if(isInternetAvailable()){
                     val url = URL("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/$location/$date?key=MQVU6RBPNQ6NUGXF9HA2D5H28")
+//                    val url = URL("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/$location/$date?key=VZV636TN54TR596FURDSFSY2M")
                     val connection: HttpURLConnection = url.openConnection() as HttpURLConnection
                     connection.requestMethod = "GET"
                     connection.connect()
@@ -246,6 +273,7 @@ private fun getWeather(
                             val pastDate = LocalDate.parse(date).minusYears(i.toLong()).toString()
 //                            getWeatherFromApiAndStore(pastDate, location, repository)
                             val url = URL("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/$location/$pastDate?key=MQVU6RBPNQ6NUGXF9HA2D5H28")
+//                            val url = URL("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/$location/$pastDate?key=VZV636TN54TR596FURDSFSY2M")
                             val connection: HttpURLConnection = url.openConnection() as HttpURLConnection
                             connection.requestMethod = "GET"
                             connection.connect()
@@ -333,17 +361,18 @@ fun WeatherLayout(
         modifier = Modifier.padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(text = "Location: $location", style = MaterialTheme.typography.bodyMedium)
-        Text(text = "Minimum Temperature: $tempMin °C", style = MaterialTheme.typography.bodyMedium)
-        Text(text = "Maximum Temperature: $tempMax °C", style = MaterialTheme.typography.bodyMedium)
-        if (error.isNotEmpty()) {
-            Text(
-                text = error,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-        }
+        Text(
+            text = "Location: $location",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 20.sp)
+        )
+        Text(
+            text = "Minimum Temperature: $tempMin °C",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 20.sp)
+        )
+        Text(
+            text = "Maximum Temperature: $tempMax °C",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 20.sp)
+        )
     }
 }
 
